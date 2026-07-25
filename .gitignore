@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Environment files that may contain local credentials
+.env
+*.local.env
+
+# Generated Kubernetes manifests
+generated/*
+!generated/.gitkeep
+
+# Database backup files
+backup-*.sql
+*.sql.gz
+*.dump
+
+# Logs
+*.log
+
+# Editor files
+.vscode/
+.idea/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
