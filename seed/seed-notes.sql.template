@@ -1,0 +1,23 @@
+USE notesdb;
+
+INSERT INTO notes (author, body) VALUES
+('${STUDENT_ID}', 'Seed note 01 - Kubernetes cluster preparation'),
+('${STUDENT_ID}', 'Seed note 02 - MySQL deployment verification'),
+('${STUDENT_ID}', 'Seed note 03 - Persistent storage testing'),
+('${STUDENT_ID}', 'Seed note 04 - ClusterIP service connectivity'),
+('${STUDENT_ID}', 'Seed note 05 - Application version one test'),
+('${STUDENT_ID}', 'Seed note 06 - ConfigMap configuration test'),
+('${STUDENT_ID}', 'Seed note 07 - Secret injection test'),
+('${STUDENT_ID}', 'Seed note 08 - Deployment replica verification'),
+('${STUDENT_ID}', 'Seed note 09 - NodePort access verification'),
+('${STUDENT_ID}', 'Seed note 10 - Schema migration preparation'),
+('${STUDENT_ID}', 'Seed note 11 - This row will be damaged by migration v2'),
+('${STUDENT_ID}', 'Seed note 12 - This row will be damaged by migration v2'),
+('${STUDENT_ID}', 'Seed note 13 - This row will be damaged by migration v2'),
+('${STUDENT_ID}', 'Seed note 14 - This row will be damaged by migration v2'),
+('${STUDENT_ID}', 'Seed note 15 - This row will be damaged by migration v2'),
+('${STUDENT_ID}', 'Seed note 16 - This row will be damaged by migration v2'),
+('${STUDENT_ID}', 'Seed note 17 - This row will be damaged by migration v2'),
+('${STUDENT_ID}', 'Seed note 18 - This row will be damaged by migration v2'),
+('${STUDENT_ID}', 'Seed note 19 - This row will be damaged by migration v2'),
+('${STUDENT_ID}', 'Seed note 20 - This row will be damaged by migration v2');
