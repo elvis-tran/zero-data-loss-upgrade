@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-config
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/part-of: zero-data-loss-upgrade
+data:
+  MYSQL_DATABASE: ${DATABASE_NAME}
+  MYSQL_HOST: mysql
+  MYSQL_PORT: "3306"
