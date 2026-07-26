@@ -1,0 +1,137 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed-notes
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: notes-app
+    app.kubernetes.io/component: seed
+    app.kubernetes.io/part-of: zero-data-loss-upgrade
+spec:
+  backoffLimit: 3
+
+  template:
+    metadata:
+      labels:
+        app: seed-notes
+        app.kubernetes.io/component: seed
+
+    spec:
+      restartPolicy: Never
+
+      nodeSelector:
+        kubernetes.io/hostname: ${CLUSTER_NAME}-worker
+
+      containers:
+        - name: seed-notes
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-creds-${STUDENT_ID}
+                  key: MYSQL_ROOT_PASSWORD
+
+            - name: STUDENT_ID
+              value: ${STUDENT_ID}
+
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+
+              echo "Waiting for MySQL..."
+              until mysqladmin ping \
+                -h mysql \
+                -uroot \
+                -p"$MYSQL_ROOT_PASSWORD" \
+                --silent
+              do
+                sleep 3
+              done
+
+              SCHEMA_VERSION="$(
+                mysql \
+                  -h mysql \
+                  -uroot \
+                  -p"$MYSQL_ROOT_PASSWORD" \
+                  -Nse "
+                    SELECT version
+                    FROM notesdb.schema_version
+                    LIMIT 1;
+                  "
+              )"
+
+              if [ "$SCHEMA_VERSION" != "1" ]; then
+                echo "Seed Job requires schema version 1."
+                echo "Current schema version: $SCHEMA_VERSION"
+                exit 1
+              fi
+
+              EXISTING_COUNT="$(
+                mysql \
+                  -h mysql \
+                  -uroot \
+                  -p"$MYSQL_ROOT_PASSWORD" \
+                  -Nse "
+                    SELECT COUNT(*)
+                    FROM notesdb.notes
+                    WHERE author = '$STUDENT_ID';
+                  "
+              )"
+
+              echo "Existing student-authored rows: $EXISTING_COUNT"
+
+              if [ "$EXISTING_COUNT" -ge 20 ]; then
+                echo "Seed data is already present. No changes required."
+                exit 0
+              fi
+
+              if [ "$EXISTING_COUNT" -ne 0 ]; then
+                echo "Partial seed data detected."
+                echo "Expected either 0 or at least 20 student rows."
+                echo "Refusing to insert duplicates."
+                exit 1
+              fi
+
+              echo "Applying student seed data..."
+
+              mysql \
+                -h mysql \
+                -uroot \
+                -p"$MYSQL_ROOT_PASSWORD" \
+                < /seed/seed-notes.sql
+
+              FINAL_COUNT="$(
+                mysql \
+                  -h mysql \
+                  -uroot \
+                  -p"$MYSQL_ROOT_PASSWORD" \
+                  -Nse "
+                    SELECT COUNT(*)
+                    FROM notesdb.notes
+                    WHERE author = '$STUDENT_ID';
+                  "
+              )"
+
+              if [ "$FINAL_COUNT" -lt 20 ]; then
+                echo "Seed verification failed."
+                echo "Expected at least 20 student rows, found $FINAL_COUNT."
+                exit 1
+              fi
+
+              echo "Seed completed successfully."
+              echo "Student-authored row count: $FINAL_COUNT"
+
+          volumeMounts:
+            - name: seed-sql
+              mountPath: /seed
+              readOnly: true
+
+      volumes:
+        - name: seed-sql
+          configMap:
+            name: seed-notes-sql

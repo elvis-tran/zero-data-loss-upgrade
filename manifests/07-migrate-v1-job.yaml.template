@@ -1,0 +1,128 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate-v1
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: notes-app
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/version: v1
+    app.kubernetes.io/part-of: zero-data-loss-upgrade
+spec:
+  backoffLimit: 3
+
+  template:
+    metadata:
+      labels:
+        app: migrate-v1
+        app.kubernetes.io/component: migration
+
+    spec:
+      restartPolicy: Never
+
+      nodeSelector:
+        kubernetes.io/hostname: ${CLUSTER_NAME}-worker
+
+      containers:
+        - name: migrate-v1
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-creds-${STUDENT_ID}
+                  key: MYSQL_ROOT_PASSWORD
+
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+
+              echo "Waiting for MySQL..."
+              until mysqladmin ping \
+                -h mysql \
+                -uroot \
+                -p"$MYSQL_ROOT_PASSWORD" \
+                --silent
+              do
+                sleep 3
+              done
+
+              echo "Checking the current schema state..."
+
+              TABLE_EXISTS="$(
+                mysql \
+                  -h mysql \
+                  -uroot \
+                  -p"$MYSQL_ROOT_PASSWORD" \
+                  -Nse "
+                    SELECT COUNT(*)
+                    FROM information_schema.tables
+                    WHERE table_schema = 'notesdb'
+                      AND table_name = 'schema_version';
+                  "
+              )"
+
+              if [ "$TABLE_EXISTS" = "0" ]; then
+                CURRENT_VERSION=0
+              else
+                CURRENT_VERSION="$(
+                  mysql \
+                    -h mysql \
+                    -uroot \
+                    -p"$MYSQL_ROOT_PASSWORD" \
+                    -Nse "
+                      SELECT COALESCE(MAX(version), 0)
+                      FROM notesdb.schema_version;
+                    "
+                )"
+              fi
+
+              echo "Current schema version: $CURRENT_VERSION"
+              echo "Target schema version: 1"
+
+              if [ "$CURRENT_VERSION" -ge 1 ]; then
+                echo "Migration v1 is already applied. No changes required."
+                exit 0
+              fi
+
+              echo "Applying migration 001_init.sql..."
+
+              mysql \
+                -h mysql \
+                -uroot \
+                -p"$MYSQL_ROOT_PASSWORD" \
+                < /migrations/001_init.sql
+
+              NEW_VERSION="$(
+                mysql \
+                  -h mysql \
+                  -uroot \
+                  -p"$MYSQL_ROOT_PASSWORD" \
+                  -Nse "
+                    SELECT version
+                    FROM notesdb.schema_version
+                    LIMIT 1;
+                  "
+              )"
+
+              if [ "$NEW_VERSION" != "1" ]; then
+                echo "Migration verification failed."
+                echo "Expected schema version 1, found $NEW_VERSION."
+                exit 1
+              fi
+
+              echo "Migration v1 completed successfully."
+
+          volumeMounts:
+            - name: migration-sql
+              mountPath: /migrations
+              readOnly: true
+
+      volumes:
+        - name: migration-sql
+          configMap:
+            name: migration-v1-sql
