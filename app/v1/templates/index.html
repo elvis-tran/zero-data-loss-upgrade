@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>Notes App</title>
+
+    <style>
+        body {
+            background: #f4f6f8;
+            color: #1f2933;
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 0;
+        }
+
+        .container {
+            margin: 40px auto;
+            max-width: 850px;
+            padding: 0 20px;
+        }
+
+        .card {
+            background: white;
+            border: 1px solid #d9e2ec;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            padding: 24px;
+        }
+
+        h1, h2 {
+            margin-top: 0;
+        }
+
+        textarea {
+            border: 1px solid #9fb3c8;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-family: inherit;
+            font-size: 1rem;
+            min-height: 110px;
+            padding: 12px;
+            resize: vertical;
+            width: 100%;
+        }
+
+        button {
+            background: #334e68;
+            border: 0;
+            border-radius: 4px;
+            color: white;
+            cursor: pointer;
+            font-size: 1rem;
+            margin-top: 12px;
+            padding: 10px 18px;
+        }
+
+        button:hover {
+            background: #243b53;
+        }
+
+        .banner {
+            background: #d9eaf7;
+            border-left: 5px solid #486581;
+            margin-bottom: 24px;
+            padding: 14px;
+        }
+
+        .error {
+            background: #ffe3e3;
+            border-left: 5px solid #c92a2a;
+            margin-bottom: 24px;
+            padding: 14px;
+        }
+
+        .note {
+            border-bottom: 1px solid #d9e2ec;
+            padding: 16px 0;
+        }
+
+        .note:last-child {
+            border-bottom: 0;
+        }
+
+        .note-body {
+            margin: 8px 0;
+            white-space: pre-wrap;
+        }
+
+        .note-meta {
+            color: #627d98;
+            font-size: 0.9rem;
+        }
+
+        .empty {
+            color: #627d98;
+            font-style: italic;
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+    <h1>Notes App</h1>
+
+    <div class="banner">
+        Served by {{ student_id }}
+        - app {{ app_version }}
+        - schema v{{ schema_version }}
+    </div>
+
+    {% if error %}
+    <div class="error">
+        {{ error }}
+    </div>
+    {% endif %}
+
+    <section class="card">
+        <h2>Add a note</h2>
+
+        <form method="post" action="{{ url_for('create_note') }}">
+            <label for="body">Note</label>
+
+            <textarea
+                id="body"
+                name="body"
+                placeholder="Enter a note"
+                required
+            ></textarea>
+
+            <button type="submit">Save Note</button>
+        </form>
+    </section>
+
+    <section class="card">
+        <h2>Saved notes</h2>
+
+        {% if notes %}
+            {% for note in notes %}
+            <article class="note">
+                <div class="note-body">{{ note.body }}</div>
+
+                <div class="note-meta">
+                    Note #{{ note.id }}
+                    · Author: {{ note.author }}
+                    · Created: {{ note.created_at }}
+                </div>
+            </article>
+            {% endfor %}
+        {% else %}
+            <p class="empty">No notes have been saved.</p>
+        {% endif %}
+    </section>
+</div>
+</body>
+</html>
