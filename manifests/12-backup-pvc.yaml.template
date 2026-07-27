@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backup-${STUDENT_ID}
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: notes-app
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: zero-data-loss-upgrade
+
+spec:
+  accessModes:
+    - ReadWriteOnce
+
+  storageClassName: standard
+
+  resources:
+    requests:
+      storage: 1Gi

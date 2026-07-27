@@ -1,0 +1,117 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backup-notesdb
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: notes-app
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: zero-data-loss-upgrade
+
+spec:
+  backoffLimit: 2
+
+  template:
+    metadata:
+      labels:
+        app: backup-notesdb
+        app.kubernetes.io/component: backup
+
+    spec:
+      restartPolicy: Never
+
+      nodeSelector:
+        kubernetes.io/hostname: ${CLUSTER_NAME}-worker
+
+      containers:
+        - name: backup
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-creds-${STUDENT_ID}
+                  key: MYSQL_ROOT_PASSWORD
+
+            - name: DATABASE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: mysql-config
+                  key: MYSQL_DATABASE
+
+            - name: DUMP_TIMESTAMP
+              value: "${DUMP_TIMESTAMP}"
+
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+
+              DUMP_FILE="/backup/${DATABASE_NAME}-${DUMP_TIMESTAMP}.sql"
+
+              echo "Waiting for MySQL..."
+              until mysqladmin ping \
+                -h mysql \
+                -uroot \
+                -p"$MYSQL_ROOT_PASSWORD" \
+                --silent
+              do
+                sleep 3
+              done
+
+              echo "Creating database backup..."
+              echo "Destination: $DUMP_FILE"
+
+              mysqldump \
+                -h mysql \
+                -uroot \
+                -p"$MYSQL_ROOT_PASSWORD" \
+                --databases "$DATABASE_NAME" \
+                --single-transaction \
+                --quick \
+                --routines \
+                --triggers \
+                --events \
+                --set-gtid-purged=OFF \
+                > "$DUMP_FILE"
+
+              if [ ! -s "$DUMP_FILE" ]; then
+                echo "Backup failed: dump file is missing or empty."
+                exit 1
+              fi
+
+              echo "Backup file size:"
+              ls -lh "$DUMP_FILE"
+
+              echo "Counting rows in the live database..."
+
+              LIVE_ROW_COUNT="$(
+                mysql \
+                  -h mysql \
+                  -uroot \
+                  -p"$MYSQL_ROOT_PASSWORD" \
+                  -Nse "
+                    SELECT COUNT(*)
+                    FROM ${DATABASE_NAME}.notes;
+                  "
+              )"
+
+              echo "Live row count: $LIVE_ROW_COUNT"
+
+              printf '%s\n' "$LIVE_ROW_COUNT" \
+                > "/backup/${DATABASE_NAME}-${DUMP_TIMESTAMP}.rowcount"
+
+              echo "Backup completed successfully."
+              echo "DUMP_FILE=$DUMP_FILE"
+
+          volumeMounts:
+            - name: backup-storage
+              mountPath: /backup
+
+      volumes:
+        - name: backup-storage
+          persistentVolumeClaim:
+            claimName: backup-${STUDENT_ID}
