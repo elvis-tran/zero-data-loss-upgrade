@@ -1,0 +1,175 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: restore-notesdb
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: notes-app
+    app.kubernetes.io/component: restore
+    app.kubernetes.io/part-of: zero-data-loss-upgrade
+
+spec:
+  backoffLimit: 0
+
+  template:
+    metadata:
+      labels:
+        app: restore-notesdb
+        app.kubernetes.io/component: restore
+
+    spec:
+      restartPolicy: Never
+
+      nodeSelector:
+        kubernetes.io/hostname: ${CLUSTER_NAME}-worker
+
+      containers:
+        - name: restore
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-creds-${STUDENT_ID}
+                  key: MYSQL_ROOT_PASSWORD
+
+            - name: DUMP_FILENAME
+              value: "${DUMP_FILENAME}"
+
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+
+              DUMP_PATH="/backup/$DUMP_FILENAME"
+
+              echo "Waiting for MySQL..."
+
+              until mysqladmin ping \
+                -h mysql \
+                -uroot \
+                -p"$MYSQL_ROOT_PASSWORD" \
+                --silent
+              do
+                sleep 3
+              done
+
+              if [ ! -s "$DUMP_PATH" ]; then
+                echo "Restore failed: dump does not exist or is empty."
+                echo "Expected: $DUMP_PATH"
+                exit 1
+              fi
+
+              echo "Restoring from: $DUMP_PATH"
+
+              mysql \
+                -h mysql \
+                -uroot \
+                -p"$MYSQL_ROOT_PASSWORD" \
+                < "$DUMP_PATH"
+
+              echo "Ensuring schema_version is reset to 1..."
+
+              mysql \
+                -h mysql \
+                -uroot \
+                -p"$MYSQL_ROOT_PASSWORD" \
+                -e "
+                  UPDATE notesdb.schema_version
+                  SET version = 1;
+                "
+
+              RESTORED_VERSION="$(
+                mysql \
+                  -h mysql \
+                  -uroot \
+                  -p"$MYSQL_ROOT_PASSWORD" \
+                  -Nse "
+                    SELECT version
+                    FROM notesdb.schema_version
+                    LIMIT 1;
+                  "
+              )"
+
+              BODY_EXISTS="$(
+                mysql \
+                  -h mysql \
+                  -uroot \
+                  -p"$MYSQL_ROOT_PASSWORD" \
+                  -Nse "
+                    SELECT COUNT(*)
+                    FROM information_schema.columns
+                    WHERE table_schema = 'notesdb'
+                      AND table_name = 'notes'
+                      AND column_name = 'body';
+                  "
+              )"
+
+              CONTENT_EXISTS="$(
+                mysql \
+                  -h mysql \
+                  -uroot \
+                  -p"$MYSQL_ROOT_PASSWORD" \
+                  -Nse "
+                    SELECT COUNT(*)
+                    FROM information_schema.columns
+                    WHERE table_schema = 'notesdb'
+                      AND table_name = 'notes'
+                      AND column_name = 'content';
+                  "
+              )"
+
+              if [ "$RESTORED_VERSION" != "1" ]; then
+                echo "Restore verification failed: schema version is not 1."
+                exit 1
+              fi
+
+              if [ "$BODY_EXISTS" != "1" ]; then
+                echo "Restore verification failed: body column is missing."
+                exit 1
+              fi
+
+              if [ "$CONTENT_EXISTS" != "0" ]; then
+                echo "Restore verification failed: v2 content column remains."
+                exit 1
+              fi
+
+              RESTORED_ROWS="$(
+                mysql \
+                  -h mysql \
+                  -uroot \
+                  -p"$MYSQL_ROOT_PASSWORD" \
+                  -Nse "
+                    SELECT COUNT(*)
+                    FROM notesdb.notes;
+                  "
+              )"
+
+              POPULATED_ROWS="$(
+                mysql \
+                  -h mysql \
+                  -uroot \
+                  -p"$MYSQL_ROOT_PASSWORD" \
+                  -Nse "
+                    SELECT COUNT(body)
+                    FROM notesdb.notes;
+                  "
+              )"
+
+              echo "Restored schema version: $RESTORED_VERSION"
+              echo "Restored total rows: $RESTORED_ROWS"
+              echo "Restored non-NULL body rows: $POPULATED_ROWS"
+              echo "Restore completed successfully."
+
+          volumeMounts:
+            - name: backup-storage
+              mountPath: /backup
+              readOnly: true
+
+      volumes:
+        - name: backup-storage
+          persistentVolumeClaim:
+            claimName: backup-${STUDENT_ID}
