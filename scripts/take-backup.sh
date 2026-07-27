@@ -26,7 +26,7 @@ echo "Rendering backup Job for timestamp: $DUMP_TIMESTAMP"
 
 envsubst \
   '${NAMESPACE} ${STUDENT_ID} ${CLUSTER_NAME} ${DUMP_TIMESTAMP}' \
-  < "$PROJECT_ROOT/manifests/13-backup-job.yaml.template" \
+  < "$PROJECT_ROOT/manifests/13-backup-job.yaml" \
   > "$GENERATED_DIR/13-backup-job.yaml"
 
 kubectl delete job backup-notesdb \

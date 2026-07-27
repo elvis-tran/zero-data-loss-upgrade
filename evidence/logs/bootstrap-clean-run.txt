@@ -1,0 +1,163 @@
+Clean bootstrap started: 2026-07-27T01:46:43+00:00
+
+[2026-07-27T01:46:43Z] Checking prerequisites
+
+[2026-07-27T01:46:43Z] Checking Docker
+
+[2026-07-27T01:46:45Z] Checking required Docker Hub image
+
+[2026-07-27T01:46:48Z] Rendering manifests
+
+[2026-07-27T01:46:48Z] Rendering kind-config.yaml
+
+[2026-07-27T01:46:48Z] Rendering 01-namespace.yaml
+
+[2026-07-27T01:46:48Z] Rendering 02-mysql-config.yaml
+
+[2026-07-27T01:46:48Z] Rendering 03-mysql-pvc.yaml
+
+[2026-07-27T01:46:48Z] Rendering 04-mysql-deployment.yaml
+
+[2026-07-27T01:46:48Z] Rendering 05-mysql-service.yaml
+
+[2026-07-27T01:46:48Z] Rendering 06-migration-v1-configmap.yaml
+
+[2026-07-27T01:46:48Z] Rendering 07-migrate-v1-job.yaml
+
+[2026-07-27T01:46:48Z] Rendering 08-seed-configmap.yaml
+
+[2026-07-27T01:46:48Z] Rendering 09-seed-job.yaml
+
+[2026-07-27T01:46:48Z] Rendering 10-notes-app-deployment.yaml
+
+[2026-07-27T01:46:48Z] Rendering 11-notes-app-service.yaml
+
+[2026-07-27T01:46:48Z] Rendering 12-backup-pvc.yaml
+
+[2026-07-27T01:46:48Z] Rendering 14-migration-v2-configmap.yaml
+
+[2026-07-27T01:46:48Z] Rendering 15-migrate-v2-job.yaml
+
+[2026-07-27T01:46:48Z] Checking the Kind cluster
+No kind clusters found.
+
+[2026-07-27T01:46:48Z] Creating Kind cluster zero-data-loss
+Creating cluster "zero-data-loss" ...
+ • Ensuring node image (kindest/node:v1.34.0) 🖼  ...
+ ✓ Ensuring node image (kindest/node:v1.34.0) 🖼
+ • Preparing nodes 📦 📦   ...
+ ✓ Preparing nodes 📦 📦 
+ • Writing configuration 📜  ...
+ ✓ Writing configuration 📜
+ • Starting control-plane 🕹️  ...
+ ✓ Starting control-plane 🕹️
+ • Installing CNI 🔌  ...
+ ✓ Installing CNI 🔌
+ • Installing StorageClass 💾  ...
+ ✓ Installing StorageClass 💾
+ • Joining worker nodes 🚜  ...
+ ✓ Joining worker nodes 🚜
+Set kubectl context to "kind-zero-data-loss"
+You can now use your cluster with:
+
+kubectl cluster-info --context kind-zero-data-loss
+
+Have a nice day! 👋
+
+[2026-07-27T01:47:16Z] Waiting for Kubernetes nodes
+node/zero-data-loss-control-plane condition met
+node/zero-data-loss-worker condition met
+
+[2026-07-27T01:47:29Z] Applying namespace
+namespace/upgrade-etran12 created
+
+[2026-07-27T01:47:29Z] Creating or preserving MySQL credentials
+secret/mysql-creds-etran12 created
+
+[2026-07-27T01:47:29Z] Applying MySQL configuration and storage
+configmap/mysql-config created
+persistentvolumeclaim/mysql-data-etran12 created
+service/mysql created
+deployment.apps/mysql created
+
+[2026-07-27T01:47:30Z] Waiting for MySQL Deployment
+Waiting for deployment "mysql" rollout to finish: 0 of 1 updated replicas are available...
+deployment "mysql" successfully rolled out
+
+[2026-07-27T01:48:14Z] Applying migration v1 SQL ConfigMap
+configmap/migration-v1-sql created
+
+[2026-07-27T01:48:15Z] Running migration v1
+job.batch/migrate-v1 created
+
+[2026-07-27T01:48:16Z] Waiting for Job migrate-v1
+job.batch/migrate-v1 condition met
+Waiting for MySQL...
+mysqladmin: [Warning] Using a password on the command line interface can be insecure.
+mysqld is alive
+Checking the current schema state...
+mysql: [Warning] Using a password on the command line interface can be insecure.
+Current schema version: 0
+Target schema version: 1
+Applying migration 001_init.sql...
+mysql: [Warning] Using a password on the command line interface can be insecure.
+mysql: [Warning] Using a password on the command line interface can be insecure.
+Migration v1 completed successfully.
+
+[2026-07-27T01:48:19Z] Applying seed SQL ConfigMap
+configmap/seed-notes-sql created
+
+[2026-07-27T01:48:19Z] Running seed Job
+job.batch/seed-notes created
+
+[2026-07-27T01:48:19Z] Waiting for Job seed-notes
+job.batch/seed-notes condition met
+Waiting for MySQL...
+mysqladmin: [Warning] Using a password on the command line interface can be insecure.
+mysqld is alive
+mysql: [Warning] Using a password on the command line interface can be insecure.
+mysql: [Warning] Using a password on the command line interface can be insecure.
+Existing student-authored rows: 0
+Applying student seed data...
+mysql: [Warning] Using a password on the command line interface can be insecure.
+mysql: [Warning] Using a password on the command line interface can be insecure.
+Seed completed successfully.
+Student-authored row count: 20
+
+[2026-07-27T01:48:23Z] Applying backup PVC
+persistentvolumeclaim/backup-etran12 created
+
+[2026-07-27T01:48:23Z] Preparing v2 migration ConfigMap without running it
+configmap/migration-v2-sql created
+
+[2026-07-27T01:48:23Z] Deploying Notes app v1
+deployment.apps/notes-app created
+service/notes-app-svc created
+Waiting for deployment "notes-app" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "notes-app" rollout to finish: 1 of 2 updated replicas are available...
+deployment "notes-app" successfully rolled out
+
+[2026-07-27T01:48:40Z] Waiting for Notes app at http://localhost:8080
+
+[2026-07-27T01:48:40Z] Verifying readiness response
+{"app_version":"v1","schema_version":1,"status":"ready"}
+
+[2026-07-27T01:48:40Z] Verifying application banner
+
+[2026-07-27T01:48:41Z] Verifying row counts
+Row counts: 20	20
+
+[2026-07-27T01:48:43Z] Bootstrap completed successfully
+
+Cluster:               zero-data-loss
+Namespace:             upgrade-etran12
+Application URL:       http://localhost:8080
+Schema version:        1
+Total rows:            20
+Student-authored rows: 20
+Elapsed seconds:       120
+
+real	2m0.381s
+user	0m4.627s
+sys	0m11.894s
+Clean bootstrap finished: 2026-07-27T01:48:43+00:00

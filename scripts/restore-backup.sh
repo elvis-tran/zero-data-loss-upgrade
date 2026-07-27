@@ -63,7 +63,7 @@ kubectl wait \
 
 envsubst \
   '${NAMESPACE} ${STUDENT_ID} ${CLUSTER_NAME} ${DUMP_FILENAME}' \
-  < "$PROJECT_ROOT/manifests/16-restore-job.yaml.template" \
+  < "$PROJECT_ROOT/manifests/16-restore-job.yaml" \
   > "$PROJECT_ROOT/generated/16-restore-job.yaml"
 
 kubectl delete job restore-notesdb \

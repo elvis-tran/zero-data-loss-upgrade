@@ -27,3 +27,7 @@ backup-*.sql
 # Operating-system files
 .DS_Store
 Thumbs.db
+
+# Local database backup artifacts
+evidence/backups/*
+!evidence/backups/.gitkeep
