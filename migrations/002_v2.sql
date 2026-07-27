@@ -7,6 +7,8 @@ UPDATE notes
 SET content = body
 WHERE id <= 10;
 
+SELECT SLEEP(15);
+
 ALTER TABLE notes
 DROP COLUMN body;
 
