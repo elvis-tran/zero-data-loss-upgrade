@@ -532,20 +532,36 @@ kubectl logs \
   job/migrate-v2
 ```
 
-Render the v2 Deployment manifest:
+Patching Web App to v2 Deployment (Simple version change):
 
 ```bash
-envsubst \
-  '${NAMESPACE} ${STUDENT_ID} ${CLUSTER_NAME} ${APP_IMAGE_V2}' \
-  < manifests/17-notes-app-v2-deployment.yaml \
-  > generated/17-notes-app-v2-deployment.yaml
-```
-
-Apply app v2:
-
-```bash
-kubectl apply \
-  -f generated/17-notes-app-v2-deployment.yaml
+kubectl patch deployment notes-app \
+  -n "$NAMESPACE" \
+  --type='strategic' \
+  -p "{
+    \"spec\": {
+      \"template\": {
+        \"spec\": {
+          \"containers\": [
+            {
+              \"name\": \"app\",
+              \"image\": \"$APP_IMAGE_V2\",
+              \"env\": [
+                {
+                  \"name\": \"APP_VERSION\",
+                  \"value\": \"v2\"
+                },
+                {
+                  \"name\": \"EXPECTED_SCHEMA_VERSION\",
+                  \"value\": \"2\"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }"
 ```
 
 Wait for the rollout:
