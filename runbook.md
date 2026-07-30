@@ -242,6 +242,8 @@ Expected result:
 
 # 4. Record the Live Pre-Upgrade State
 
+Application URL:
+
 ```text
 http://localhost:8080
 ```
@@ -416,7 +418,7 @@ Do not run migration v2 unless:
 - The dump is non-empty.
 - The checksum passes.
 - The backup count equals the current live count.
-- The live-added rows are represented in the dump.
+- The expected live-added rows are represented in the dump.
 
 ---
 
@@ -514,6 +516,8 @@ kubectl get pods \
   -w
 ```
 
+When the migration Pod shows `Completed`, press `Ctrl+C` to exit the watch.
+
 Wait for Job completion:
 
 ```bash
@@ -532,36 +536,23 @@ kubectl logs \
   job/migrate-v2
 ```
 
-Patching Web App to v2 Deployment (Simple version change):
+Update the Notes app image to v2:
 
 ```bash
-kubectl patch deployment notes-app \
+kubectl set image \
+  deployment/notes-app \
   -n "$NAMESPACE" \
-  --type='strategic' \
-  -p "{
-    \"spec\": {
-      \"template\": {
-        \"spec\": {
-          \"containers\": [
-            {
-              \"name\": \"app\",
-              \"image\": \"$APP_IMAGE_V2\",
-              \"env\": [
-                {
-                  \"name\": \"APP_VERSION\",
-                  \"value\": \"v2\"
-                },
-                {
-                  \"name\": \"EXPECTED_SCHEMA_VERSION\",
-                  \"value\": \"2\"
-                }
-              ]
-            }
-          ]
-        }
-      }
-    }
-  }"
+  app="$APP_IMAGE_V2"
+```
+
+Update the application version and expected schema version:
+
+```bash
+kubectl set env \
+  deployment/notes-app \
+  -n "$NAMESPACE" \
+  APP_VERSION=v2 \
+  EXPECTED_SCHEMA_VERSION=2
 ```
 
 Wait for the rollout:
@@ -588,6 +579,22 @@ Expected image:
 docker.io/elvistrann7/notes-app:v2
 ```
 
+Confirm the version environment variables:
+
+```bash
+kubectl get deployment notes-app \
+  -n "$NAMESPACE" \
+  -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}{"="}{.value}{"\n"}{end}' \
+  | grep -E 'APP_VERSION|EXPECTED_SCHEMA_VERSION'
+```
+
+Expected:
+
+```text
+APP_VERSION=v2
+EXPECTED_SCHEMA_VERSION=2
+```
+
 ---
 
 # 8. Detect the Data Damage
@@ -611,11 +618,10 @@ DAMAGED_COUNTS="$(./scripts/k8s-row-count.sh)"
 echo "$DAMAGED_COUNTS"
 ```
 
-Expected pattern:
+Expected:
 
-```text
-<pre-upgrade total>	10
-```
+- The total row count remains equal to the pre-upgrade total.
+- Only rows with `id <= 10` retain copied content.
 
 Inspect damaged rows:
 
@@ -648,6 +654,25 @@ kubectl exec \
   '
 ```
 
+Count total rows and populated content:
+
+```bash
+kubectl exec \
+  -n "$NAMESPACE" \
+  "$MYSQL_POD" \
+  -- sh -c '
+    mysql \
+      -uroot \
+      -p"$MYSQL_ROOT_PASSWORD" \
+      -e "
+        SELECT
+          COUNT(*) AS total_rows,
+          COUNT(content) AS populated_content
+        FROM notesdb.notes;
+      "
+  '
+```
+
 Count the NULL values:
 
 ```bash
@@ -666,7 +691,7 @@ kubectl exec \
   '
 ```
 
-> The migration completed and the schema now reports version 2, but the populated-content count proves data was lost. A successful Job and compatible schema do not prove data integrity.
+The migration can complete successfully while still causing logical data loss. Job completion and schema compatibility do not by themselves prove data integrity.
 
 ---
 
@@ -680,7 +705,7 @@ kubectl rollout history \
   -n "$NAMESPACE"
 ```
 
-> Deployment history records application Pod-template revisions. It does not record database schema changes, deleted column values, row counts, backup state, or data integrity.
+Deployment history records application Pod-template revisions. It does not record database schema changes, deleted column values, row counts, backup state, or data integrity.
 
 Run:
 
@@ -717,19 +742,18 @@ Run the row-count proof again:
 ./scripts/k8s-row-count.sh
 ```
 
-## Expected result
+Expected result:
 
 - The database is still schema version 2.
 - The `body` column is still missing.
 - The damaged values remain lost.
-- v1 Pods cannot become Ready against schema version 2.
 - Application rollback alone is insufficient.
+
+Because the v2 rollout used separate `set image` and `set env` commands, `rollout undo` may step back through an intermediate Deployment revision. The database state is unchanged either way, so the verified backup is still required for data recovery.
 
 ---
 
 # 10. Restore the Database
-
-## Recovery decision
 
 Find the latest verified backup:
 
@@ -943,6 +967,12 @@ kubectl describe job migrate-v2 \
   -n "$NAMESPACE"
 ```
 
+Run the schema-aware row-count script:
+
+```bash
+./scripts/k8s-row-count.sh
+```
+
 Inspect database columns and schema version:
 
 ```bash
@@ -971,25 +1001,20 @@ kubectl exec \
         WHERE table_schema = '\''notesdb'\''
           AND table_name = '\''notes'\''
         ORDER BY ordinal_position;
-
-        SELECT
-          COUNT(*) AS total_rows,
-          COUNT(body) AS populated_body,
-          COUNT(content) AS populated_content
-        FROM notesdb.notes;
       "
   '
 ```
 
-A possible interrupted state is:
+Possible interrupted states include:
 
-- `schema_version = 1`
-- Both `body` and `content` exist
-- IDs 1 through 10 were copied
-- IDs greater than 10 have NULL `content`
-- The migration Job failed or was deleted
+- Only `body` exists if the migration stopped before the first `ALTER TABLE`.
+- Both `body` and `content` exist if the migration stopped after adding/copying `content`.
+- Only `content` exists if the migration reached the `DROP COLUMN body` statement.
+- `schema_version` may still be 1 even though earlier schema changes committed.
 
-Run:
+Do not assume that a failed or interrupted Job means no database changes occurred.
+
+Find the latest verified backup:
 
 ```bash
 LATEST_DUMP="$(
@@ -1003,6 +1028,19 @@ LATEST_DUMP="$(
   | cut -d' ' -f2-
 )"
 
+echo "$LATEST_DUMP"
+```
+
+Verify the backup before restoring:
+
+```bash
+test -s "$LATEST_DUMP"
+sha256sum -c "${LATEST_DUMP}.sha256"
+```
+
+Restore:
+
+```bash
 ./scripts/restore-backup.sh "$LATEST_DUMP"
 ```
 
@@ -1044,6 +1082,40 @@ Check the database:
 ./scripts/k8s-row-count.sh
 ```
 
+Inspect schema version and columns before deciding on recovery:
+
+```bash
+MYSQL_POD="$(
+  kubectl get pod \
+    -n "$NAMESPACE" \
+    -l app=mysql \
+    -o jsonpath='{.items[0].metadata.name}'
+)"
+```
+
+```bash
+kubectl exec \
+  -n "$NAMESPACE" \
+  "$MYSQL_POD" \
+  -- sh -c '
+    mysql \
+      -uroot \
+      -p"$MYSQL_ROOT_PASSWORD" \
+      -e "
+        SELECT version
+        FROM notesdb.schema_version;
+
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = '\''notesdb'\''
+          AND table_name = '\''notes'\''
+        ORDER BY ordinal_position;
+      "
+  '
+```
+
+If migration v2 completed, a Deployment rollout interruption does not undo the database changes. Restore the verified database backup and return the application to v1.
+
 ---
 
 # 15. Rollout History Explanation
@@ -1055,6 +1127,8 @@ kubectl rollout history \
   deployment/notes-app \
   -n "$NAMESPACE"
 ```
+
+`kubectl rollout history` shows revisions of the Deployment Pod template. It can show application image and environment configuration changes. It does not show database schema state, migration statement progress, row counts, deleted values, backup contents, or data integrity.
 
 ---
 
